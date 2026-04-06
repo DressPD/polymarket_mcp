@@ -8,22 +8,22 @@ import httpx
 
 from .config import Settings
 from .execution import ExecutionEngine
-from .polymarket_client import PolymarketClient
-from .sources import SourceClient
+from .polymarket_client import MarketClient
+from .sources import SignalClient
 from .strategy import Strategy, StrategyInput
 
 
 class PolymarketBot:
     def __init__(self, settings: Settings) -> None:
         self.settings: Settings = settings
-        self.sources: SourceClient = SourceClient(settings)
-        self.polymarket: PolymarketClient = PolymarketClient(settings)
+        self.sources: SignalClient = SignalClient(settings)
+        self.markets: MarketClient = MarketClient(settings)
         self.strategy: Strategy = Strategy(settings)
         self.execution: ExecutionEngine = ExecutionEngine(settings)
 
     def close(self) -> None:
         self.sources.close()
-        self.polymarket.close()
+        self.markets.close()
 
     def run_cycle(self) -> dict[str, object]:
         errors: list[str] = []
@@ -38,7 +38,7 @@ class PolymarketBot:
             signals = []
 
         try:
-            markets = self.polymarket.list_candidate_markets(self.settings.signal_keywords)
+            markets = self.markets.list_candidate_markets(self.settings.signal_keywords)
         except httpx.HTTPError as exc:
             errors.append(f"market_fetch_http_error:{exc}")
             markets = []
