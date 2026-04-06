@@ -70,6 +70,8 @@ Available MCP tools:
 - `run_cycle_once`
 - `fetch_signals`
 - `list_markets`
+- `submit_demo_order`
+- `confirm_demo_order`
 
 Tool response envelope is consistent:
 
@@ -82,6 +84,22 @@ MCP limits are controlled by:
 
 - `MCP_DEFAULT_LIMIT` (default tool list size)
 - `MCP_MAX_LIMIT` (hard cap for tool list size)
+
+Safety gates are controlled by:
+
+- `MAX_ORDER_SIZE_USD`
+- `MAX_TOTAL_EXPOSURE_USD`
+- `MAX_POSITION_SIZE_PER_MARKET`
+- `MIN_LIQUIDITY_REQUIRED`
+- `MAX_SPREAD_TOLERANCE`
+- `REQUIRE_CONFIRMATION_ABOVE_USD`
+- `ENABLE_AUTONOMOUS_TRADING`
+
+Order confirmation flow:
+
+1. Call `submit_demo_order`.
+2. If response has `requires_confirmation=true`, capture `confirmation_id`.
+3. Call `confirm_demo_order(confirmation_id)` to execute.
 
 ## Connect MCP to clients
 

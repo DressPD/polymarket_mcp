@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
-from .bot import PolymarketBot
 from .config import load_settings
 from .polymarket_client import MarketClient
+from .server import close_server_context, confirm_order, create_server_context, demo_decision, run_cycle_once as server_run_cycle_once, submit_order_with_confirmation
 from .sources import SignalClient
 
 mcp = FastMCP("polymarket-mcp")
+_CTX = create_server_context()
 
 
 def _safe_limit(value: int | None, settings_default: int, settings_max: int) -> int:
@@ -40,9 +41,8 @@ def health() -> dict[str, object]:
 
 @mcp.tool()
 def run_cycle_once() -> dict[str, object]:
-    bot = PolymarketBot(load_settings())
     try:
-        result = bot.run_cycle()
+        result = server_run_cycle_once(_CTX)
         return {
             "ok": True,
             "tool": "run_cycle_once",
@@ -55,8 +55,6 @@ def run_cycle_once() -> dict[str, object]:
             "error": str(exc),
             "error_category": "internal",
         }
-    finally:
-        bot.close()
 
 
 @mcp.tool()
@@ -139,8 +137,47 @@ def list_markets(limit: int | None = None) -> dict[str, object]:
     }
 
 
+@mcp.tool()
+def submit_demo_order() -> dict[str, object]:
+    try:
+        result = submit_order_with_confirmation(_CTX, demo_decision(_CTX))
+        return {
+            "ok": True,
+            "tool": "submit_demo_order",
+            "result": result,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "tool": "submit_demo_order",
+            "error": str(exc),
+            "error_category": "internal",
+        }
+
+
+@mcp.tool()
+def confirm_demo_order(confirmation_id: str) -> dict[str, object]:
+    try:
+        result = confirm_order(_CTX, confirmation_id)
+        return {
+            "ok": result.get("ok", False),
+            "tool": "confirm_demo_order",
+            "result": result,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "tool": "confirm_demo_order",
+            "error": str(exc),
+            "error_category": "internal",
+        }
+
+
 def main() -> None:
-    mcp.run()
+    try:
+        mcp.run()
+    finally:
+        close_server_context(_CTX)
 
 
 if __name__ == "__main__":
