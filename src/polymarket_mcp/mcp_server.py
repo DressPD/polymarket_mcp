@@ -22,11 +22,26 @@ def _safe_limit(value: int | None, settings_default: int, settings_max: int) -> 
     return min(value, settings_max)
 
 
-def _pagination_meta(total_count: int, limit: int) -> dict[str, object]:
-    returned = min(total_count, limit)
-    next_cursor = str(returned) if total_count > returned else None
+def _safe_offset(cursor: str | None, total_count: int) -> int:
+    if cursor is None or cursor.strip() == "":
+        return 0
+    try:
+        parsed = int(cursor)
+    except ValueError:
+        return 0
+    if parsed < 0:
+        return 0
+    return min(parsed, total_count)
+
+
+def _pagination_meta(total_count: int, limit: int, offset: int) -> dict[str, object]:
+    remaining = max(total_count - offset, 0)
+    returned = min(remaining, limit)
+    next_offset = offset + returned
+    next_cursor = str(next_offset) if total_count > next_offset else None
     return {
         "limit": limit,
+        "cursor": str(offset),
         "returned_count": returned,
         "total_count": total_count,
         "next_cursor": next_cursor,
@@ -45,7 +60,7 @@ def _close_if_request_context(ctx, is_request: bool) -> None:
         close_server_context(ctx)
 
 
-@mcp.tool()
+@mcp.tool(description="Return service health, config mode, and MCP limit defaults.")
 def health() -> dict[str, object]:
     settings = load_settings()
     return {
@@ -64,7 +79,7 @@ def health() -> dict[str, object]:
     }
 
 
-@mcp.tool()
+@mcp.tool(description="Run one end-to-end polling cycle and return counts/actions.")
 def run_cycle_once() -> dict[str, object]:
     settings = load_settings()
     ctx, is_request = _request_context(settings.mcp_context_mode)
@@ -86,14 +101,15 @@ def run_cycle_once() -> dict[str, object]:
         _close_if_request_context(ctx, is_request)
 
 
-@mcp.tool()
-def fetch_signals(limit: int | None = None) -> dict[str, object]:
+@mcp.tool(description="Fetch signal items with MCP pagination and provider warnings.")
+def fetch_signals(limit: int | None = None, cursor: str | None = None) -> dict[str, object]:
     settings = load_settings()
     capped_limit = _safe_limit(limit, settings.mcp_default_limit, settings.mcp_max_limit)
     client = SignalClient(settings)
     try:
         items, provider_errors = client.fetch_all_with_meta()
-        paged = items[:capped_limit]
+        offset = _safe_offset(cursor, len(items))
+        paged = items[offset : offset + capped_limit]
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
@@ -109,7 +125,7 @@ def fetch_signals(limit: int | None = None) -> dict[str, object]:
     return {
         "ok": True,
         "tool": "fetch_signals",
-        "pagination": _pagination_meta(len(items), capped_limit),
+        "pagination": _pagination_meta(len(items), capped_limit, offset),
         "count": len(paged),
         "warnings": provider_errors,
         "items": [
@@ -126,14 +142,15 @@ def fetch_signals(limit: int | None = None) -> dict[str, object]:
     }
 
 
-@mcp.tool()
-def list_markets(limit: int | None = None) -> dict[str, object]:
+@mcp.tool(description="List candidate markets with MCP pagination and provider warnings.")
+def list_markets(limit: int | None = None, cursor: str | None = None) -> dict[str, object]:
     settings = load_settings()
     capped_limit = _safe_limit(limit, settings.mcp_default_limit, settings.mcp_max_limit)
     client = MarketClient(settings)
     try:
         markets, provider_errors = client.list_candidate_markets_with_meta(settings.signal_keywords)
-        paged = markets[:capped_limit]
+        offset = _safe_offset(cursor, len(markets))
+        paged = markets[offset : offset + capped_limit]
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
@@ -149,7 +166,7 @@ def list_markets(limit: int | None = None) -> dict[str, object]:
     return {
         "ok": True,
         "tool": "list_markets",
-        "pagination": _pagination_meta(len(markets), capped_limit),
+        "pagination": _pagination_meta(len(markets), capped_limit, offset),
         "count": len(paged),
         "warnings": provider_errors,
         "items": [
@@ -170,14 +187,22 @@ def list_markets(limit: int | None = None) -> dict[str, object]:
     }
 
 
-@mcp.tool()
-def search_markets(query: str, limit: int | None = None) -> dict[str, object]:
+@mcp.tool(description="Search markets by text query with pagination and warnings.")
+def search_markets(query: str, limit: int | None = None, cursor: str | None = None) -> dict[str, object]:
     settings = load_settings()
     capped_limit = _safe_limit(limit, settings.mcp_default_limit, settings.mcp_max_limit)
     client = MarketClient(settings)
     try:
-        markets, provider_errors = client.search_markets_with_meta(query, capped_limit)
-        paged = markets[:capped_limit]
+        markets, provider_errors = client.search_markets_with_meta(query, settings.mcp_max_limit)
+        if provider_errors.get("search") == "empty_query":
+            return {
+                "ok": False,
+                "tool": "search_markets",
+                "error": "empty_query",
+                "error_category": "invalid_input",
+            }
+        offset = _safe_offset(cursor, len(markets))
+        paged = markets[offset : offset + capped_limit]
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
@@ -194,7 +219,7 @@ def search_markets(query: str, limit: int | None = None) -> dict[str, object]:
         "ok": True,
         "tool": "search_markets",
         "query": query,
-        "pagination": _pagination_meta(len(markets), capped_limit),
+        "pagination": _pagination_meta(len(markets), capped_limit, offset),
         "count": len(paged),
         "warnings": provider_errors,
         "items": [
@@ -215,7 +240,7 @@ def search_markets(query: str, limit: int | None = None) -> dict[str, object]:
     }
 
 
-@mcp.tool()
+@mcp.tool(description="Get current best bid/ask and midpoint for a token.")
 def get_current_price(token_id: str) -> dict[str, object]:
     settings = load_settings()
     client = MarketClient(settings)
@@ -232,6 +257,14 @@ def get_current_price(token_id: str) -> dict[str, object]:
         client.close()
 
     if payload is None:
+        if provider_errors.get("price") == "empty_token_id":
+            return {
+                "ok": False,
+                "tool": "get_current_price",
+                "error": "empty_token_id",
+                "error_category": "invalid_input",
+                "warnings": provider_errors,
+            }
         return {
             "ok": False,
             "tool": "get_current_price",
@@ -248,7 +281,7 @@ def get_current_price(token_id: str) -> dict[str, object]:
     }
 
 
-@mcp.tool()
+@mcp.tool(description="Get token orderbook levels with optional depth cap.")
 def get_orderbook(token_id: str, depth: int = 20) -> dict[str, object]:
     settings = load_settings()
     client = MarketClient(settings)
@@ -265,6 +298,14 @@ def get_orderbook(token_id: str, depth: int = 20) -> dict[str, object]:
         client.close()
 
     if payload is None:
+        if provider_errors.get("orderbook") == "empty_token_id":
+            return {
+                "ok": False,
+                "tool": "get_orderbook",
+                "error": "empty_token_id",
+                "error_category": "invalid_input",
+                "warnings": provider_errors,
+            }
         return {
             "ok": False,
             "tool": "get_orderbook",
@@ -281,7 +322,7 @@ def get_orderbook(token_id: str, depth: int = 20) -> dict[str, object]:
     }
 
 
-@mcp.tool()
+@mcp.tool(description="Submit demo decision, with confirmation flow when required.")
 def submit_demo_order() -> dict[str, object]:
     settings = load_settings()
     ctx, is_request = _request_context(settings.mcp_context_mode)
@@ -304,7 +345,7 @@ def submit_demo_order() -> dict[str, object]:
         _close_if_request_context(ctx, is_request)
 
 
-@mcp.tool()
+@mcp.tool(description="Confirm previously staged demo order by confirmation id.")
 def confirm_demo_order(confirmation_id: str) -> dict[str, object]:
     settings = load_settings()
     ctx, is_request = _request_context(settings.mcp_context_mode)
@@ -326,7 +367,7 @@ def confirm_demo_order(confirmation_id: str) -> dict[str, object]:
         _close_if_request_context(ctx, is_request)
 
 
-@mcp.tool()
+@mcp.tool(description="List tracked in-memory demo positions from server context.")
 def list_positions() -> dict[str, object]:
     settings = load_settings()
     ctx, is_request = _request_context(settings.mcp_context_mode)
@@ -350,7 +391,7 @@ def list_positions() -> dict[str, object]:
         _close_if_request_context(ctx, is_request)
 
 
-@mcp.tool()
+@mcp.tool(description="List pending confirmation items awaiting user confirmation.")
 def list_pending_confirmations() -> dict[str, object]:
     settings = load_settings()
     ctx, is_request = _request_context(settings.mcp_context_mode)

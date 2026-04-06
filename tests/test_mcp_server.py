@@ -22,6 +22,15 @@ def test_safe_limit_bounds() -> None:
     assert mcp_server._safe_limit(99, 3, 5) == 5
 
 
+def test_safe_offset_bounds() -> None:
+    assert mcp_server._safe_offset(None, 10) == 0
+    assert mcp_server._safe_offset("", 10) == 0
+    assert mcp_server._safe_offset("bad", 10) == 0
+    assert mcp_server._safe_offset("-4", 10) == 0
+    assert mcp_server._safe_offset("6", 10) == 6
+    assert mcp_server._safe_offset("99", 10) == 10
+
+
 def test_health_contains_limits(monkeypatch) -> None:
     monkeypatch.setattr(mcp_server, "load_settings", _settings)
     payload = mcp_server.health()
@@ -161,6 +170,7 @@ def test_list_markets_applies_limit_and_success_shape(monkeypatch) -> None:
     pagination = payload["pagination"]
     assert isinstance(pagination, dict)
     assert pagination["limit"] == 5
+    assert pagination["cursor"] == "0"
     assert pagination["returned_count"] == 5
     assert pagination["total_count"] == 6
     assert pagination["next_cursor"] == "5"
@@ -200,8 +210,81 @@ def test_fetch_signals_includes_pagination_and_warnings(monkeypatch) -> None:
     assert payload["count"] == 5
     pagination = payload["pagination"]
     assert isinstance(pagination, dict)
+    assert pagination["cursor"] == "0"
     assert pagination["total_count"] == 6
     assert payload["warnings"] == {"x": "temporary provider warning"}
+
+
+def test_fetch_signals_cursor_applies_offset(monkeypatch) -> None:
+    monkeypatch.setattr(mcp_server, "load_settings", _settings)
+
+    class _Item:
+        def __init__(self, idx: int) -> None:
+            from datetime import datetime, timezone
+
+            self.source = type("S", (), {"value": "x"})()
+            self.source_id = f"sid-{idx}"
+            self.author = "a"
+            self.url = "u"
+            self.text = "t"
+            self.published_at = datetime.now(timezone.utc)
+
+    class _Client:
+        def __init__(self, _settings: Settings) -> None:
+            pass
+
+        def fetch_all_with_meta(self):
+            return ([_Item(i) for i in range(6)], {})
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(mcp_server, "SignalClient", _Client)
+
+    payload = mcp_server.fetch_signals(limit=2, cursor="2")
+    assert payload["ok"] is True
+    assert payload["count"] == 2
+    assert payload["pagination"]["cursor"] == "2"
+    items = payload["items"]
+    assert isinstance(items, list)
+    assert items[0]["source_id"] == "sid-2"
+
+
+def test_list_markets_cursor_applies_offset(monkeypatch) -> None:
+    monkeypatch.setattr(mcp_server, "load_settings", _settings)
+
+    class _Market:
+        def __init__(self, idx: int) -> None:
+            self.market_id = f"m{idx}"
+            self.question = "q"
+            self.slug = "s"
+            self.yes_token_id = f"tok{idx}"
+            self.best_ask = 0.5
+            self.best_bid = 0.4
+            self.volume_24h = 10.0
+            self.liquidity = 20.0
+            self.min_tick_size = 0.01
+            self.neg_risk = False
+
+    class _Client:
+        def __init__(self, _settings: Settings) -> None:
+            pass
+
+        def list_candidate_markets_with_meta(self, _keywords):
+            return ([_Market(0), _Market(1), _Market(2), _Market(3)], {})
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(mcp_server, "MarketClient", _Client)
+
+    payload = mcp_server.list_markets(limit=2, cursor="1")
+    assert payload["ok"] is True
+    assert payload["count"] == 2
+    assert payload["pagination"]["cursor"] == "1"
+    items = payload["items"]
+    assert isinstance(items, list)
+    assert items[0]["market_id"] == "m1"
 
 
 def test_list_positions_and_pending_confirmations_tools(monkeypatch) -> None:
@@ -302,6 +385,26 @@ def test_search_markets_success_and_not_found(monkeypatch) -> None:
     assert out["pagination"]["total_count"] == 6
 
 
+def test_search_markets_invalid_input_empty_query(monkeypatch) -> None:
+    monkeypatch.setattr(mcp_server, "load_settings", _settings)
+
+    class _Client:
+        def __init__(self, _settings: Settings) -> None:
+            pass
+
+        def search_markets_with_meta(self, _query: str, _limit: int):
+            return ([], {"search": "empty_query"})
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(mcp_server, "MarketClient", _Client)
+
+    out = mcp_server.search_markets("   ")
+    assert out["ok"] is False
+    assert out["error_category"] == "invalid_input"
+
+
 def test_get_current_price_and_orderbook(monkeypatch) -> None:
     monkeypatch.setattr(mcp_server, "load_settings", _settings)
 
@@ -356,3 +459,30 @@ def test_get_current_price_and_orderbook_not_found(monkeypatch) -> None:
     book = mcp_server.get_orderbook("tok")
     assert book["ok"] is False
     assert book["error_category"] == "not_found"
+
+
+def test_get_current_price_and_orderbook_invalid_input(monkeypatch) -> None:
+    monkeypatch.setattr(mcp_server, "load_settings", _settings)
+
+    class _Client:
+        def __init__(self, _settings: Settings) -> None:
+            pass
+
+        def get_current_price_with_meta(self, _token_id: str):
+            return (None, {"price": "empty_token_id"})
+
+        def get_orderbook_with_meta(self, _token_id: str, _depth: int):
+            return (None, {"orderbook": "empty_token_id"})
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(mcp_server, "MarketClient", _Client)
+
+    price = mcp_server.get_current_price("")
+    assert price["ok"] is False
+    assert price["error_category"] == "invalid_input"
+
+    book = mcp_server.get_orderbook("", depth=5)
+    assert book["ok"] is False
+    assert book["error_category"] == "invalid_input"
