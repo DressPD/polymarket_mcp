@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from polymarket_mcp.config import load_settings
+from polymarket_mcp.config import (
+    _clamp_float,
+    _clamp_int,
+    _is_http_url,
+    _parse_bool,
+    _parse_csv,
+    _parse_float,
+    _parse_int,
+    load_settings,
+)
 
 
 def test_load_settings_clamps_and_normalizes(monkeypatch) -> None:
@@ -51,3 +60,50 @@ def test_load_settings_rejects_invalid_context_mode_and_non_http_custom_urls(mon
 
     assert settings.mcp_context_mode == "shared"
     assert settings.custom_rss_urls == ["https://ok.example/rss"]
+
+
+def test_parse_bool() -> None:
+    assert _parse_bool("true", False) is True
+    assert _parse_bool("FALSE", True) is False
+    assert _parse_bool(None, True) is True
+    assert _parse_bool("1", False) is True
+
+
+def test_parse_int() -> None:
+    assert _parse_int("42", 0) == 42
+    assert _parse_int("", 10) == 10
+    assert _parse_int(None, 5) == 5
+    assert _parse_int("invalid", 7) == 7
+
+
+def test_parse_float() -> None:
+    assert _parse_float("3.14", 0.0) == 3.14
+    assert _parse_float("", 1.0) == 1.0
+    assert _parse_float(None, 2.0) == 2.0
+    assert _parse_float("bad", 4.0) == 4.0
+
+
+def test_parse_csv() -> None:
+    assert _parse_csv("a,b,c", []) == ["a", "b", "c"]
+    assert _parse_csv("", ["d"]) == ["d"]
+    assert _parse_csv(None, ["e"]) == ["e"]
+    assert _parse_csv(" a , b ", []) == ["a", "b"]
+
+
+def test_clamp_float() -> None:
+    assert _clamp_float(5.0, 0.0, 10.0) == 5.0
+    assert _clamp_float(-1.0, 0.0, 10.0) == 0.0
+    assert _clamp_float(15.0, 0.0, 10.0) == 10.0
+
+
+def test_clamp_int() -> None:
+    assert _clamp_int(5, 0, 10) == 5
+    assert _clamp_int(-1, 0, 10) == 0
+    assert _clamp_int(15, 0, 10) == 10
+
+
+def test_is_http_url() -> None:
+    assert _is_http_url("https://example.com") is True
+    assert _is_http_url("http://test.org") is True
+    assert _is_http_url("ftp://bad.com") is False
+    assert _is_http_url("noturl") is False
