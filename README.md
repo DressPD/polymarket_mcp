@@ -1,14 +1,16 @@
-# polymarket_bot
+# polymarket_mcp
 
-Simple backend bot scaffold. Goal: ingest Trump-related signals in near real time, scan Polymarket markets, place small rule-based bets with strict risk limits.
+Signal-driven Polymarket bot with pluggable data services and local MCP wrapper for LLM clients.
 
 ## What this project does
 
-- Polls multi-source signals:
-  - X recent-search API (if `X_BEARER_TOKEN` set)
-  - RSS fallback feed path for Truth/press ingestion
-  - Official press feed path
-- Scans Polymarket Gamma API markets (`/markets`) for keyword-matching questions.
+- Polls multi-source signals (configurable provider order):
+  - `x` (X recent-search API)
+  - `truth_rss` (fallback feed path)
+  - `official_rss` (official press feeds)
+  - `newsapi` (optional NewsAPI key)
+  - `custom_rss` (user-defined feeds)
+- Scans Polymarket markets through pluggable market providers (`gamma` implemented).
 - Runs a simple confidence + liquidity strategy.
 - Executes orders through a guarded execution engine:
   - `dry_run` default
@@ -26,7 +28,7 @@ Bot prints simulated actions until you explicitly switch both flags.
 ## Setup
 
 ```bash
-cd /Users/dress/Desktop/Personal/Projects/Code/polymarket_bot
+cd /path/to/polymarket_mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -48,7 +50,129 @@ pip install -e .[trade]
 ## Run
 
 ```bash
-PYTHONPATH=src python -m polymarket_bot.main
+PYTHONPATH=src python -m polymarket_mcp.main
+```
+
+## Run MCP server locally
+
+Start MCP over stdio (local process):
+
+```bash
+cd /path/to/polymarket_mcp
+source .venv/bin/activate
+pip install -e .
+PYTHONPATH=src python -m polymarket_mcp.mcp_server
+```
+
+Available MCP tools:
+
+- `health`
+- `run_cycle_once`
+- `fetch_signals`
+- `list_markets`
+
+Tool response envelope is consistent:
+
+- `ok`: boolean
+- `tool`: tool name
+- `error` + `error_category` on failures
+- tool-specific payload under stable keys (`result`, `items`, `count`, `limit`)
+
+MCP limits are controlled by:
+
+- `MCP_DEFAULT_LIMIT` (default tool list size)
+- `MCP_MAX_LIMIT` (hard cap for tool list size)
+
+## Connect MCP to clients
+
+### GitHub Copilot CLI
+
+Config file: `~/.copilot/mcp-config.json`
+
+```json
+{
+  "mcpServers": {
+    "polymarket_mcp": {
+      "type": "local",
+      "command": "/path/to/polymarket_mcp/.venv/bin/python",
+      "args": ["-m", "polymarket_mcp.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/path/to/polymarket_mcp/src",
+        "BOT_DRY_RUN": "true",
+        "BOT_ENABLE_LIVE_TRADING": "false"
+      },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+Then run Copilot CLI and verify with `/mcp show`.
+
+### GitHub Copilot in VS Code
+
+Workspace config: `.vscode/mcp.json`
+
+```json
+{
+  "servers": {
+    "polymarket_mcp": {
+      "type": "stdio",
+      "command": "/path/to/polymarket_mcp/.venv/bin/python",
+      "args": ["-m", "polymarket_mcp.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/path/to/polymarket_mcp/src",
+        "BOT_DRY_RUN": "true",
+        "BOT_ENABLE_LIVE_TRADING": "false"
+      }
+    }
+  }
+}
+```
+
+Open Chat and enable MCP server tools.
+
+### Claude Desktop
+
+Open: **Settings → Developer → Edit Config**.
+
+```json
+{
+  "mcpServers": {
+    "polymarket_mcp": {
+      "command": "/path/to/polymarket_mcp/.venv/bin/python",
+      "args": ["-m", "polymarket_mcp.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/path/to/polymarket_mcp/src",
+        "BOT_DRY_RUN": "true",
+        "BOT_ENABLE_LIVE_TRADING": "false"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop fully after config changes.
+
+### OpenCode
+
+Config file: `~/.opencode.json` (or project `.opencode.json`)
+
+```json
+{
+  "mcpServers": {
+    "polymarket_mcp": {
+      "command": "/path/to/polymarket_mcp/.venv/bin/python",
+      "args": ["-m", "polymarket_mcp.mcp_server"],
+      "type": "stdio",
+      "env": [
+        "PYTHONPATH=/path/to/polymarket_mcp/src",
+        "BOT_DRY_RUN=true",
+        "BOT_ENABLE_LIVE_TRADING=false"
+      ]
+    }
+  }
+}
 ```
 
 Output is JSON per cycle:
@@ -139,3 +263,7 @@ PYTHONPATH=src pytest -q
 - Execution validation gates:
   - reject invalid price/size/confidence
   - catch live order submission errors and return structured failure action
+- MCP wrapper improvements:
+  - consistent `ok` envelope in tool responses
+  - bounded `limit` handling via config (`MCP_DEFAULT_LIMIT`, `MCP_MAX_LIMIT`)
+  - health payload includes runtime limits and UTC time

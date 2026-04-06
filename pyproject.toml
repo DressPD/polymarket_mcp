@@ -3,13 +3,14 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "polymarket-bot"
+name = "polymarket-mcp"
 version = "0.1.0"
-description = "Signal-driven Polymarket bot scaffold with dry-run by default"
+description = "Signal-driven Polymarket multi-service bot with MCP wrapper"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27.0",
   "python-dotenv>=1.0.1",
+  "mcp>=1.12.4",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,10 @@ trade = [
 dev = [
   "pytest>=8.2.0",
 ]
+
+[project.scripts]
+polymarket-mcp = "polymarket_mcp.main:main"
+polymarket-mcp-server = "polymarket_mcp.mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
