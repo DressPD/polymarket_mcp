@@ -76,6 +76,17 @@ class PolymarketBot:
 
     def run_forever(self) -> None:
         while True:
-            result = self.run_cycle()
+            try:
+                result = self.run_cycle()
+            except Exception as exc:  # noqa: BLE001
+                result = {
+                    "timestamp": datetime.now().isoformat(),
+                    "signal_count": 0,
+                    "market_count": 0,
+                    "decision_count": 0,
+                    "action_count": 0,
+                    "errors": [f"cycle_error:{exc}"],
+                    "actions": [],
+                }
             print(json.dumps(result, ensure_ascii=False))
             time.sleep(self.settings.poll_interval_seconds)

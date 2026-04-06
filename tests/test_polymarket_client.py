@@ -165,6 +165,21 @@ def test_market_client_provider_flow_and_close() -> None:
         client.close()
 
 
+def test_market_client_list_candidate_markets_logs_provider_failures(monkeypatch) -> None:
+    settings = make_settings(market_services=["gamma", "unknown"])
+    client = poly.MarketClient(settings)
+    try:
+        warnings: list[str] = []
+        monkeypatch.setattr(poly.LOGGER, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+        client.providers["gamma"] = lambda _c, _s, _k: (_ for _ in ()).throw(RuntimeError("gamma down"))
+        out = client.list_candidate_markets(["trump"])
+        assert out == []
+        assert any("market provider failed" in line for line in warnings)
+        assert any("market provider unsupported" in line for line in warnings)
+    finally:
+        client.close()
+
+
 def test_market_client_with_meta_collects_provider_errors() -> None:
     settings = make_settings(market_services=["gamma", "unknown"])
     client = poly.MarketClient(settings)

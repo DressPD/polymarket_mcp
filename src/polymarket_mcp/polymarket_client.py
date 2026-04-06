@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 
@@ -10,6 +11,7 @@ from .config import Settings
 from .models import CandidateMarket
 
 MarketProvider = Callable[[httpx.Client, Settings, list[str]], list[CandidateMarket]]
+LOGGER = logging.getLogger(__name__)
 
 
 class MarketClient:
@@ -26,12 +28,15 @@ class MarketClient:
     def list_candidate_markets(self, keywords: list[str]) -> list[CandidateMarket]:
         candidates: list[CandidateMarket] = []
         for service_name in self.settings.market_services:
-            provider = self.providers.get(service_name.strip().lower())
+            normalized = service_name.strip().lower()
+            provider = self.providers.get(normalized)
             if provider is None:
+                LOGGER.warning("market provider unsupported: %s", normalized)
                 continue
             try:
                 candidates.extend(provider(self.client, self.settings, keywords))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("market provider failed: %s (%s)", normalized, exc)
                 continue
         return _dedupe(candidates)
 

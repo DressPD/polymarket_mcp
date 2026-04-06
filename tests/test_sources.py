@@ -245,6 +245,21 @@ def test_signal_client_fetch_all_provider_handling_and_to_json() -> None:
         client.close()
 
 
+def test_signal_client_fetch_all_logs_provider_failures(monkeypatch) -> None:
+    settings = make_settings(signal_services=["x", "unknown"], signal_lookback_minutes=60)
+    client = sources.SignalClient(settings)
+    try:
+        warnings: list[str] = []
+        monkeypatch.setattr(sources.LOGGER, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+        client.providers["x"] = lambda _c, _s: (_ for _ in ()).throw(RuntimeError("provider down"))
+        out = client.fetch_all()
+        assert out == []
+        assert any("signal provider failed" in line for line in warnings)
+        assert any("signal provider unsupported" in line for line in warnings)
+    finally:
+        client.close()
+
+
 def test_signal_client_fetch_all_with_meta_collects_warnings() -> None:
     settings = make_settings(signal_services=["x", "unknown"], signal_lookback_minutes=60)
     client = sources.SignalClient(settings)

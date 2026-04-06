@@ -91,3 +91,29 @@ def test_close_calls_underlying_clients() -> None:
 
     assert calls["s"] == 1
     assert calls["m"] == 1
+
+
+def test_run_forever_catches_cycle_exceptions(monkeypatch) -> None:
+    bot = PolymarketBot(make_settings(poll_interval_seconds=1))
+    calls = {"sleep": 0}
+    printed: list[str] = []
+
+    def _boom_cycle():
+        raise RuntimeError("cycle exploded")
+
+    def _sleep(_seconds: int) -> None:
+        calls["sleep"] += 1
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(bot, "run_cycle", _boom_cycle)
+    monkeypatch.setattr("polymarket_mcp.bot.time.sleep", _sleep)
+    monkeypatch.setattr("builtins.print", lambda payload: printed.append(str(payload)))
+
+    try:
+        bot.run_forever()
+    except KeyboardInterrupt:
+        pass
+
+    assert calls["sleep"] == 1
+    assert len(printed) == 1
+    assert "cycle_error:cycle exploded" in printed[0]

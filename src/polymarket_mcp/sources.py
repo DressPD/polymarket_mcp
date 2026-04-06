@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import timedelta
 from email.utils import parsedate_to_datetime
@@ -12,6 +13,7 @@ from .config import Settings
 from .models import SignalItem, SignalSource, utc_now
 
 SignalProvider = Callable[[httpx.Client, Settings], list[SignalItem]]
+LOGGER = logging.getLogger(__name__)
 
 
 class SignalClient:
@@ -32,12 +34,15 @@ class SignalClient:
     def fetch_all(self) -> list[SignalItem]:
         items: list[SignalItem] = []
         for service_name in self.settings.signal_services:
-            provider = self.providers.get(service_name.strip().lower())
+            normalized = service_name.strip().lower()
+            provider = self.providers.get(normalized)
             if provider is None:
+                LOGGER.warning("signal provider unsupported: %s", normalized)
                 continue
             try:
                 items.extend(provider(self.client, self.settings))
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("signal provider failed: %s (%s)", normalized, exc)
                 continue
         return _within_lookback(_dedupe(items), self.settings.signal_lookback_minutes)
 
