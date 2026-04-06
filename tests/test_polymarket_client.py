@@ -163,3 +163,97 @@ def test_market_client_provider_flow_and_close() -> None:
         assert client.list_candidate_markets(["trump"]) == []
     finally:
         client.close()
+
+
+def test_market_client_with_meta_collects_provider_errors() -> None:
+    settings = make_settings(market_services=["gamma", "unknown"])
+    client = poly.MarketClient(settings)
+    try:
+        client.providers["gamma"] = lambda _c, _s, _k: (_ for _ in ()).throw(RuntimeError("gamma down"))
+        out, errors = client.list_candidate_markets_with_meta(["trump"])
+        assert out == []
+        assert errors["gamma"] == "gamma down"
+        assert errors["unknown"] == "unsupported_provider"
+    finally:
+        client.close()
+
+
+def test_search_markets_with_meta_and_empty_query(monkeypatch) -> None:
+    settings = make_settings(market_services=["gamma", "unknown"])
+    client = poly.MarketClient(settings)
+    try:
+        sample = CandidateMarket(
+            market_id="m1",
+            question="Will Trump win?",
+            slug="trump-win",
+            yes_token_id="tok",
+            best_ask=0.55,
+            best_bid=0.5,
+            volume_24h=200.0,
+            liquidity=5000.0,
+        )
+        monkey = [sample, sample]
+        monkeypatch.setattr(poly, "_search_gamma_markets", lambda *_args, **_kwargs: monkey)
+        out, errors = client.search_markets_with_meta("trump", 10)
+        assert len(out) == 1
+        assert errors["unknown"] == "unsupported_provider"
+
+        out2, errors2 = client.search_markets_with_meta("   ", 10)
+        assert out2 == []
+        assert errors2["search"] == "empty_query"
+    finally:
+        client.close()
+
+
+def test_get_current_price_with_meta(monkeypatch) -> None:
+    settings = make_settings(market_limit=5)
+    payload = [
+        {
+            "id": "m1",
+            "question": "Will Trump win?",
+            "slug": "trump-win",
+            "clobTokenIds": ["tok1"],
+            "bestBid": "0.41",
+            "bestAsk": "0.43",
+            "minimum_tick_size": "0.01",
+        }
+    ]
+    with poly.httpx.Client() as client:
+        monkeypatch.setattr(client, "get", lambda *_args, **_kwargs: _FakeResponse(200, payload=payload))
+        monkeypatch.setattr(poly, "_request_with_retry", lambda *_args, **_kwargs: _FakeResponse(200, payload=payload))
+        market_client = poly.MarketClient(settings)
+        try:
+            market_client.client = client
+            result, errors = market_client.get_current_price_with_meta("tok1")
+            assert errors == {}
+            assert result is not None
+            assert result["mid_price"] == 0.42
+            missing, missing_errors = market_client.get_current_price_with_meta("missing")
+            assert missing is None
+            assert missing_errors["gamma"] == "token_not_found"
+        finally:
+            market_client.close()
+
+
+def test_get_orderbook_with_meta(monkeypatch) -> None:
+    settings = make_settings()
+    orderbook = {
+        "bids": [["0.40", "10"], ["0.39", "5"]],
+        "asks": [{"price": "0.42", "size": "8"}, {"price": "0.43", "size": "6"}],
+    }
+    market_client = poly.MarketClient(settings)
+    try:
+        monkeypatch.setattr(poly, "_fetch_orderbook_payload", lambda *_args, **_kwargs: orderbook)
+        payload, errors = market_client.get_orderbook_with_meta("tok1", depth=1)
+        assert errors == {}
+        assert payload is not None
+        assert payload["depth"] == 1
+        assert payload["best_bid"] == 0.4
+        assert payload["best_ask"] == 0.42
+
+        monkeypatch.setattr(poly, "_fetch_orderbook_payload", lambda *_args, **_kwargs: None)
+        payload2, errors2 = market_client.get_orderbook_with_meta("tok1", depth=5)
+        assert payload2 is None
+        assert errors2["clob"] == "orderbook_unavailable"
+    finally:
+        market_client.close()
