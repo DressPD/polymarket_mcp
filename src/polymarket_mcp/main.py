@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from polymarket_bot.bot import PolymarketBot
-from polymarket_bot.config import load_settings
+from polymarket_mcp.bot import PolymarketBot
+from polymarket_mcp.config import load_settings
 
 
 def main() -> None:
