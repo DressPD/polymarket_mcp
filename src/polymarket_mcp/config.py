@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 
 from dotenv import load_dotenv
 
@@ -45,6 +46,20 @@ def _clamp_int(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+class ChainID(int, Enum):
+    POLYGON_MAINNET = 137
+    POLYGON_AMOY_TESTNET = 80002
+
+
+class RiskLimitDefaults:
+    MAX_ORDER_SIZE_USD = 1000.0
+    MAX_TOTAL_EXPOSURE_USD = 5000.0
+    MAX_POSITION_SIZE_PER_MARKET = 2000.0
+    MIN_LIQUIDITY_REQUIRED = 10000.0
+    MAX_SPREAD_TOLERANCE = 0.05
+    REQUIRE_CONFIRMATION_ABOVE_USD = 500.0
+
+
 @dataclass(frozen=True)
 class Settings:
     poll_interval_seconds: int
@@ -72,6 +87,13 @@ class Settings:
     custom_rss_urls: list[str]
     mcp_default_limit: int
     mcp_max_limit: int
+    max_order_size_usd: float
+    max_total_exposure_usd: float
+    max_position_size_per_market: float
+    min_liquidity_required: float
+    max_spread_tolerance: float
+    require_confirmation_above_usd: float
+    enable_autonomous_trading: bool
 
 
 def load_settings() -> Settings:
@@ -83,7 +105,9 @@ def load_settings() -> Settings:
     market_limit = _clamp_int(_parse_int(os.getenv("BOT_MARKET_LIMIT"), 50), 1, 500)
     min_confidence = _clamp_float(_parse_float(os.getenv("BOT_MIN_CONFIDENCE"), 0.65), 0.0, 1.0)
     lookback = _clamp_int(_parse_int(os.getenv("SIGNAL_LOOKBACK_MINUTES"), 60), 1, 24 * 60)
-    chain_id = _parse_int(os.getenv("POLYMARKET_CHAIN_ID"), 137)
+    chain_id = _parse_int(os.getenv("POLYMARKET_CHAIN_ID"), ChainID.POLYGON_MAINNET.value)
+    if chain_id not in {ChainID.POLYGON_MAINNET.value, ChainID.POLYGON_AMOY_TESTNET.value}:
+        chain_id = ChainID.POLYGON_MAINNET.value
     signature_type = _parse_int(os.getenv("POLYMARKET_SIGNATURE_TYPE"), 1)
     if signature_type not in {0, 1, 2}:
         signature_type = 1
@@ -91,6 +115,40 @@ def load_settings() -> Settings:
     mcp_max_limit = _clamp_int(_parse_int(os.getenv("MCP_MAX_LIMIT"), 50), 1, 500)
     if mcp_default_limit > mcp_max_limit:
         mcp_default_limit = mcp_max_limit
+
+    max_order_size_usd = _clamp_float(
+        _parse_float(os.getenv("MAX_ORDER_SIZE_USD"), RiskLimitDefaults.MAX_ORDER_SIZE_USD),
+        1.0,
+        50000.0,
+    )
+    max_total_exposure_usd = _clamp_float(
+        _parse_float(os.getenv("MAX_TOTAL_EXPOSURE_USD"), RiskLimitDefaults.MAX_TOTAL_EXPOSURE_USD),
+        max_order_size_usd,
+        1_000_000.0,
+    )
+    max_position_size_per_market = _clamp_float(
+        _parse_float(os.getenv("MAX_POSITION_SIZE_PER_MARKET"), RiskLimitDefaults.MAX_POSITION_SIZE_PER_MARKET),
+        1.0,
+        max_total_exposure_usd,
+    )
+    min_liquidity_required = _clamp_float(
+        _parse_float(os.getenv("MIN_LIQUIDITY_REQUIRED"), RiskLimitDefaults.MIN_LIQUIDITY_REQUIRED),
+        0.0,
+        10_000_000.0,
+    )
+    max_spread_tolerance = _clamp_float(
+        _parse_float(os.getenv("MAX_SPREAD_TOLERANCE"), RiskLimitDefaults.MAX_SPREAD_TOLERANCE),
+        0.0,
+        1.0,
+    )
+    require_confirmation_above_usd = _clamp_float(
+        _parse_float(
+            os.getenv("REQUIRE_CONFIRMATION_ABOVE_USD"),
+            RiskLimitDefaults.REQUIRE_CONFIRMATION_ABOVE_USD,
+        ),
+        1.0,
+        max_order_size_usd,
+    )
 
     return Settings(
         poll_interval_seconds=poll_interval,
@@ -130,4 +188,11 @@ def load_settings() -> Settings:
         ),
         mcp_default_limit=mcp_default_limit,
         mcp_max_limit=mcp_max_limit,
+        max_order_size_usd=max_order_size_usd,
+        max_total_exposure_usd=max_total_exposure_usd,
+        max_position_size_per_market=max_position_size_per_market,
+        min_liquidity_required=min_liquidity_required,
+        max_spread_tolerance=max_spread_tolerance,
+        require_confirmation_above_usd=require_confirmation_above_usd,
+        enable_autonomous_trading=_parse_bool(os.getenv("ENABLE_AUTONOMOUS_TRADING"), False),
     )
