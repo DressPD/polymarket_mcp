@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from polymarket_bot.config import Settings
-from polymarket_bot.models import CandidateMarket, SignalItem, SignalSource, utc_now
-from polymarket_bot.strategy import Strategy, StrategyInput
+from polymarket_mcp.config import Settings
+from polymarket_mcp.models import CandidateMarket, SignalItem, SignalSource, utc_now
+from polymarket_mcp.strategy import Strategy, StrategyInput
 
 
 def _settings(min_confidence: float = 0.65) -> Settings:
@@ -28,6 +28,12 @@ def _settings(min_confidence: float = 0.65) -> Settings:
         poly_api_key=None,
         poly_api_secret=None,
         poly_api_passphrase=None,
+        news_api_key=None,
+        signal_services=["x", "official_rss"],
+        market_services=["gamma"],
+        custom_rss_urls=[],
+        mcp_default_limit=10,
+        mcp_max_limit=50,
     )
 
 

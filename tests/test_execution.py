@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from polymarket_bot.config import Settings
-from polymarket_bot.execution import ExecutionEngine
-from polymarket_bot.models import BetDecision, BetSide
+from polymarket_mcp.config import Settings
+from polymarket_mcp.execution import ExecutionEngine
+from polymarket_mcp.models import BetDecision, BetSide
 
 
 def _settings() -> Settings:
@@ -26,6 +26,12 @@ def _settings() -> Settings:
         poly_api_key=None,
         poly_api_secret=None,
         poly_api_passphrase=None,
+        news_api_key=None,
+        signal_services=["x"],
+        market_services=["gamma"],
+        custom_rss_urls=[],
+        mcp_default_limit=10,
+        mcp_max_limit=50,
     )
 
 

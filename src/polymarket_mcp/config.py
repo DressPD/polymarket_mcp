@@ -66,6 +66,12 @@ class Settings:
     poly_api_key: str | None
     poly_api_secret: str | None
     poly_api_passphrase: str | None
+    news_api_key: str | None
+    signal_services: list[str]
+    market_services: list[str]
+    custom_rss_urls: list[str]
+    mcp_default_limit: int
+    mcp_max_limit: int
 
 
 def load_settings() -> Settings:
@@ -81,6 +87,10 @@ def load_settings() -> Settings:
     signature_type = _parse_int(os.getenv("POLYMARKET_SIGNATURE_TYPE"), 1)
     if signature_type not in {0, 1, 2}:
         signature_type = 1
+    mcp_default_limit = _clamp_int(_parse_int(os.getenv("MCP_DEFAULT_LIMIT"), 10), 1, 100)
+    mcp_max_limit = _clamp_int(_parse_int(os.getenv("MCP_MAX_LIMIT"), 50), 1, 500)
+    if mcp_default_limit > mcp_max_limit:
+        mcp_default_limit = mcp_max_limit
 
     return Settings(
         poll_interval_seconds=poll_interval,
@@ -105,4 +115,19 @@ def load_settings() -> Settings:
         poly_api_key=os.getenv("POLYMARKET_API_KEY") or None,
         poly_api_secret=os.getenv("POLYMARKET_API_SECRET") or None,
         poly_api_passphrase=os.getenv("POLYMARKET_API_PASSPHRASE") or None,
+        news_api_key=os.getenv("NEWS_API_KEY") or None,
+        signal_services=_parse_csv(
+            os.getenv("SIGNAL_SERVICES"),
+            ["x", "truth_rss", "official_rss"],
+        ),
+        market_services=_parse_csv(
+            os.getenv("MARKET_SERVICES"),
+            ["gamma"],
+        ),
+        custom_rss_urls=_parse_csv(
+            os.getenv("CUSTOM_RSS_URLS"),
+            [],
+        ),
+        mcp_default_limit=mcp_default_limit,
+        mcp_max_limit=mcp_max_limit,
     )

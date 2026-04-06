@@ -9,6 +9,8 @@ class SignalSource(str, Enum):
     X = "x"
     TRUTH_SOCIAL = "truth_social"
     OFFICIAL_RSS = "official_rss"
+    NEWS_API = "news_api"
+    CUSTOM_RSS = "custom_rss"
 
 
 @dataclass(frozen=True)
