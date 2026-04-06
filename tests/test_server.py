@@ -57,6 +57,8 @@ def test_server_context_status_and_close(monkeypatch) -> None:
     status = ctx.status()
     assert status["authenticated"] is False
     assert status["mode"] == "read-only"
+    assert status["positions"] == 0
+    assert ctx.positions_list() == []
 
     server.close_server_context(ctx)
     assert cast(Any, ctx.signal_client).closed is True
@@ -226,6 +228,44 @@ def test_confirm_order_not_found_expired_and_success() -> None:
     assert ok["ok"] is True
     assert ok["confirmation_id"] == ok_id
     assert ok_id not in ctx.pending_confirmations
+
+
+def test_submit_and_confirm_update_positions() -> None:
+    decision = BetDecision(
+        market_id="m1",
+        token_id="tok1",
+        side=BetSide.BUY,
+        price=0.5,
+        usd_size=20.0,
+        confidence=0.8,
+        reason="r",
+    )
+
+    class _Limits:
+        def validate_order(self, *_args):
+            return True, None
+
+        def should_require_confirmation(self, *_args, **_kwargs):
+            return False
+
+    class _Exec:
+        def execute(self, _d):
+            return [ExecutedAction(status="dry_run_order", details={"ok": True})]
+
+    class _Ctx:
+        settings = make_settings(min_liquidity_required=10.0)
+        safety_limits = _Limits()
+        pending_confirmations = {}
+        execution = _Exec()
+        positions = {}
+
+        def positions_list(self):
+            return list(self.positions.values())
+
+    ctx = cast(Any, _Ctx())
+    out = server.submit_order_with_confirmation(ctx, decision)
+    assert out["ok"] is True
+    assert "tok1" in ctx.positions
 
 
 def test_demo_decision_and_runtime_bot(monkeypatch) -> None:

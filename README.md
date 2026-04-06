@@ -72,18 +72,26 @@ Available MCP tools:
 - `list_markets`
 - `submit_demo_order`
 - `confirm_demo_order`
+- `list_positions`
+- `list_pending_confirmations`
 
 Tool response envelope is consistent:
 
 - `ok`: boolean
 - `tool`: tool name
 - `error` + `error_category` on failures
-- tool-specific payload under stable keys (`result`, `items`, `count`, `limit`)
+- tool-specific payload under stable keys (`result`, `items`, `count`, `pagination`)
 
 MCP limits are controlled by:
 
 - `MCP_DEFAULT_LIMIT` (default tool list size)
 - `MCP_MAX_LIMIT` (hard cap for tool list size)
+- `MCP_CONTEXT_MODE` (`shared` or `request`)
+
+Signal/RSS endpoint overrides:
+
+- `TRUTH_SOCIAL_RSS_URL`
+- `OFFICIAL_RSS_URL`
 
 Safety gates are controlled by:
 
@@ -283,5 +291,7 @@ PYTHONPATH=src pytest -q
   - catch live order submission errors and return structured failure action
 - MCP wrapper improvements:
   - consistent `ok` envelope in tool responses
-  - bounded `limit` handling via config (`MCP_DEFAULT_LIMIT`, `MCP_MAX_LIMIT`)
+  - bounded `limit` handling with pagination metadata
+  - provider warning telemetry in signal/market responses
+  - context isolation mode (`MCP_CONTEXT_MODE=request`) for per-request lifecycle
   - health payload includes runtime limits and UTC time

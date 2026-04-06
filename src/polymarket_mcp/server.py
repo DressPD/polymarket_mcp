@@ -35,6 +35,7 @@ class ServerContext:
     rate_limiter: RateLimiter
     safety_limits: SafetyLimits
     pending_confirmations: dict[str, PendingConfirmation]
+    positions: dict[str, Position]
 
     @property
     def is_authenticated(self) -> bool:
@@ -46,9 +47,13 @@ class ServerContext:
             "authenticated": self.is_authenticated,
             "mode": "full" if self.is_authenticated else "read-only",
             "pending_confirmations": len(self.pending_confirmations),
+            "positions": len(self.positions),
             "signal_services": self.settings.signal_services,
             "market_services": self.settings.market_services,
         }
+
+    def positions_list(self) -> list[Position]:
+        return list(self.positions.values())
 
 
 def create_server_context(settings: Settings | None = None) -> ServerContext:
@@ -71,6 +76,7 @@ def create_server_context(settings: Settings | None = None) -> ServerContext:
         rate_limiter=RateLimiter(),
         safety_limits=safety_limits,
         pending_confirmations={},
+        positions={},
     )
 
 
@@ -111,7 +117,8 @@ def submit_order_with_confirmation(context: ServerContext, decision: BetDecision
         price=decision.price,
         size=max(1.0, decision.usd_size / max(decision.price, 0.01)),
     )
-    valid, reason = context.safety_limits.validate_order(order, _positions_stub(), market_data)
+    current_positions = _context_positions(context)
+    valid, reason = context.safety_limits.validate_order(order, current_positions, market_data)
     if not valid:
         return {
             "ok": False,
@@ -141,6 +148,7 @@ def submit_order_with_confirmation(context: ServerContext, decision: BetDecision
         }
 
     result = context.execution.execute([decision])
+    _apply_position_update(context, decision)
     return {
         "ok": True,
         "requires_confirmation": False,
@@ -167,6 +175,7 @@ def confirm_order(context: ServerContext, confirmation_id: str) -> dict[str, obj
         }
 
     result = context.execution.execute([pending.decision])
+    _apply_position_update(context, pending.decision)
     del context.pending_confirmations[confirmation_id]
     return {
         "ok": True,
@@ -175,8 +184,55 @@ def confirm_order(context: ServerContext, confirmation_id: str) -> dict[str, obj
     }
 
 
-def _positions_stub() -> list[Position]:
+def _apply_position_update(context: ServerContext, decision: BetDecision) -> None:
+    value = round(decision.usd_size, 8)
+    positions = _context_positions_map(context)
+    existing = positions.get(decision.token_id)
+    if existing is None:
+        signed = value if decision.side == BetSide.BUY else -value
+        positions[decision.token_id] = Position(
+            token_id=decision.token_id,
+            market_id=decision.market_id,
+            size=signed,
+            value_usd=signed,
+        )
+        return
+
+    if decision.side == BetSide.BUY:
+        new_size = existing.size + value
+    else:
+        new_size = existing.size - value
+
+    if abs(new_size) < 1e-9:
+        del positions[decision.token_id]
+        return
+
+    positions[decision.token_id] = Position(
+        token_id=existing.token_id,
+        market_id=existing.market_id,
+        size=new_size,
+        value_usd=new_size,
+    )
+
+
+def _context_positions(context: ServerContext) -> list[Position]:
+    positions_attr = getattr(context, "positions", None)
+    if isinstance(positions_attr, dict):
+        return list(positions_attr.values())
+    if hasattr(context, "positions_list"):
+        result = context.positions_list()
+        if isinstance(result, list):
+            return [item for item in result if isinstance(item, Position)]
     return []
+
+
+def _context_positions_map(context: ServerContext) -> dict[str, Position]:
+    positions_attr = getattr(context, "positions", None)
+    if isinstance(positions_attr, dict):
+        return positions_attr
+    positions: dict[str, Position] = {}
+    setattr(context, "positions", positions)
+    return positions
 
 
 def demo_decision(context: ServerContext) -> BetDecision:
