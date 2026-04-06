@@ -18,6 +18,20 @@ Signal-driven Polymarket bot with pluggable data services and local MCP wrapper 
   - max USD per bet
   - max bets per hour
 
+For a clear user-facing capability map, see: `docs/CAPABILITIES.md`.
+
+## Capabilities quick table
+
+| Area | What it does | Main MCP tools |
+|---|---|---|
+| Runtime health | Reports service state, limits, providers, mode | `health` |
+| End-to-end cycle | Runs signal -> market -> strategy -> execution flow once | `run_cycle_once` |
+| Signal ingestion | Fetches normalized signal items from configured providers | `fetch_signals` |
+| Market discovery | Lists and searches candidate Polymarket markets | `list_markets`, `search_markets` |
+| Price and depth | Gets current token pricing and orderbook ladders | `get_current_price`, `get_orderbook` |
+| Guarded execution | Submits demo orders with optional explicit confirmation gate | `submit_demo_order`, `confirm_demo_order` |
+| State inspection | Shows in-memory positions and pending confirmations | `list_positions`, `list_pending_confirmations` |
+
 ## Safety defaults
 
 - `BOT_DRY_RUN=true`
