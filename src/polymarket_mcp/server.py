@@ -185,25 +185,29 @@ def confirm_order(context: ServerContext, confirmation_id: str) -> dict[str, obj
 
 
 def _apply_position_update(context: ServerContext, decision: BetDecision) -> None:
-    value = round(decision.usd_size, 8)
+    signed_value = round(decision.usd_size, 8)
+    unit_size = round(decision.usd_size / max(decision.price, 0.01), 8)
     positions = _context_positions_map(context)
     existing = positions.get(decision.token_id)
     if existing is None:
-        signed = value if decision.side == BetSide.BUY else -value
+        signed_units = unit_size if decision.side == BetSide.BUY else -unit_size
+        signed_usd = signed_value if decision.side == BetSide.BUY else -signed_value
         positions[decision.token_id] = Position(
             token_id=decision.token_id,
             market_id=decision.market_id,
-            size=signed,
-            value_usd=signed,
+            size=signed_units,
+            value_usd=signed_usd,
         )
         return
 
     if decision.side == BetSide.BUY:
-        new_size = existing.size + value
+        new_size = existing.size + unit_size
+        new_value_usd = existing.value_usd + signed_value
     else:
-        new_size = existing.size - value
+        new_size = existing.size - unit_size
+        new_value_usd = existing.value_usd - signed_value
 
-    if abs(new_size) < 1e-9:
+    if abs(new_size) < 1e-9 or abs(new_value_usd) < 1e-9:
         del positions[decision.token_id]
         return
 
@@ -211,7 +215,7 @@ def _apply_position_update(context: ServerContext, decision: BetDecision) -> Non
         token_id=existing.token_id,
         market_id=existing.market_id,
         size=new_size,
-        value_usd=new_size,
+        value_usd=new_value_usd,
     )
 
 

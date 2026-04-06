@@ -266,6 +266,9 @@ def test_submit_and_confirm_update_positions() -> None:
     out = server.submit_order_with_confirmation(ctx, decision)
     assert out["ok"] is True
     assert "tok1" in ctx.positions
+    position = ctx.positions["tok1"]
+    assert position.size == 40.0
+    assert position.value_usd == 20.0
 
 
 def test_demo_decision_and_runtime_bot(monkeypatch) -> None:
