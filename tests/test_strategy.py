@@ -2,39 +2,14 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from polymarket_mcp.config import Settings
 from polymarket_mcp.models import CandidateMarket, SignalItem, SignalSource, utc_now
 from polymarket_mcp.strategy import Strategy, StrategyInput
 
+from ._helpers import make_settings
 
-def _settings(min_confidence: float = 0.65) -> Settings:
-    return Settings(
-        poll_interval_seconds=20,
-        dry_run=True,
-        enable_live_trading=False,
-        max_usd_per_bet=5.0,
-        max_bets_per_hour=4,
-        market_limit=50,
-        min_confidence=min_confidence,
-        signal_keywords=["trump", "donald"],
-        signal_lookback_minutes=60,
-        x_bearer_token=None,
-        gamma_base_url="https://gamma-api.polymarket.com",
-        clob_host="https://clob.polymarket.com",
-        chain_id=137,
-        private_key=None,
-        funder_address=None,
-        signature_type=1,
-        poly_api_key=None,
-        poly_api_secret=None,
-        poly_api_passphrase=None,
-        news_api_key=None,
-        signal_services=["x", "official_rss"],
-        market_services=["gamma"],
-        custom_rss_urls=[],
-        mcp_default_limit=10,
-        mcp_max_limit=50,
-    )
+
+def _settings(min_confidence: float = 0.65):
+    return make_settings(min_confidence=min_confidence)
 
 
 def test_strategy_creates_buy_decision_for_matching_signal() -> None:
