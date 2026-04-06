@@ -41,6 +41,21 @@ class SignalClient:
                 continue
         return _within_lookback(_dedupe(items), self.settings.signal_lookback_minutes)
 
+    def fetch_all_with_meta(self) -> tuple[list[SignalItem], dict[str, str]]:
+        items: list[SignalItem] = []
+        errors: dict[str, str] = {}
+        for service_name in self.settings.signal_services:
+            normalized = service_name.strip().lower()
+            provider = self.providers.get(normalized)
+            if provider is None:
+                errors[normalized] = "unsupported_provider"
+                continue
+            try:
+                items.extend(provider(self.client, self.settings))
+            except Exception as exc:  # noqa: BLE001
+                errors[normalized] = str(exc)
+        return _within_lookback(_dedupe(items), self.settings.signal_lookback_minutes), errors
+
 
 def _within_lookback(items: list[SignalItem], lookback_minutes: int) -> list[SignalItem]:
     cutoff = utc_now() - timedelta(minutes=lookback_minutes)
@@ -189,7 +204,7 @@ def _parse_rss_feed(
 def _fetch_truth_social_rss(client: httpx.Client, settings: Settings) -> list[SignalItem]:
     return _parse_rss_feed(
         client=client,
-        feed_url="https://www.presidency.ucsb.edu/taxonomy/term/428/all/feed/feed?items_per_page=20",
+        feed_url=settings.truth_social_rss_url,
         source=SignalSource.TRUTH_SOCIAL,
         default_author="truth-social-fallback",
         keywords=settings.signal_keywords,
@@ -199,7 +214,7 @@ def _fetch_truth_social_rss(client: httpx.Client, settings: Settings) -> list[Si
 def _fetch_official_press_rss(client: httpx.Client, settings: Settings) -> list[SignalItem]:
     return _parse_rss_feed(
         client=client,
-        feed_url="https://www.presidency.ucsb.edu/documents/app-categories/press-office/press-releases?items_per_page=60",
+        feed_url=settings.official_rss_url,
         source=SignalSource.OFFICIAL_RSS,
         default_author="official-press",
         keywords=settings.signal_keywords,

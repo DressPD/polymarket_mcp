@@ -51,6 +51,11 @@ class ChainID(int, Enum):
     POLYGON_AMOY_TESTNET = 80002
 
 
+class MCPContextMode(str, Enum):
+    SHARED = "shared"
+    REQUEST = "request"
+
+
 class RiskLimitDefaults:
     MAX_ORDER_SIZE_USD = 1000.0
     MAX_TOTAL_EXPOSURE_USD = 5000.0
@@ -85,8 +90,11 @@ class Settings:
     signal_services: list[str]
     market_services: list[str]
     custom_rss_urls: list[str]
+    truth_social_rss_url: str
+    official_rss_url: str
     mcp_default_limit: int
     mcp_max_limit: int
+    mcp_context_mode: str
     max_order_size_usd: float
     max_total_exposure_usd: float
     max_position_size_per_market: float
@@ -115,6 +123,20 @@ def load_settings() -> Settings:
     mcp_max_limit = _clamp_int(_parse_int(os.getenv("MCP_MAX_LIMIT"), 50), 1, 500)
     if mcp_default_limit > mcp_max_limit:
         mcp_default_limit = mcp_max_limit
+    mcp_context_mode = (os.getenv("MCP_CONTEXT_MODE") or MCPContextMode.SHARED.value).strip().lower()
+    if mcp_context_mode not in {MCPContextMode.SHARED.value, MCPContextMode.REQUEST.value}:
+        mcp_context_mode = MCPContextMode.SHARED.value
+
+    truth_social_rss_url = os.getenv(
+        "TRUTH_SOCIAL_RSS_URL",
+        "https://www.presidency.ucsb.edu/taxonomy/term/428/all/feed/feed?items_per_page=20",
+    )
+    official_rss_url = os.getenv(
+        "OFFICIAL_RSS_URL",
+        "https://www.presidency.ucsb.edu/documents/app-categories/press-office/press-releases?items_per_page=60",
+    )
+
+    custom_rss_urls = [url for url in _parse_csv(os.getenv("CUSTOM_RSS_URLS"), []) if _is_http_url(url)]
 
     max_order_size_usd = _clamp_float(
         _parse_float(os.getenv("MAX_ORDER_SIZE_USD"), RiskLimitDefaults.MAX_ORDER_SIZE_USD),
@@ -182,12 +204,12 @@ def load_settings() -> Settings:
             os.getenv("MARKET_SERVICES"),
             ["gamma"],
         ),
-        custom_rss_urls=_parse_csv(
-            os.getenv("CUSTOM_RSS_URLS"),
-            [],
-        ),
+        custom_rss_urls=custom_rss_urls,
+        truth_social_rss_url=truth_social_rss_url,
+        official_rss_url=official_rss_url,
         mcp_default_limit=mcp_default_limit,
         mcp_max_limit=mcp_max_limit,
+        mcp_context_mode=mcp_context_mode,
         max_order_size_usd=max_order_size_usd,
         max_total_exposure_usd=max_total_exposure_usd,
         max_position_size_per_market=max_position_size_per_market,
@@ -196,3 +218,8 @@ def load_settings() -> Settings:
         require_confirmation_above_usd=require_confirmation_above_usd,
         enable_autonomous_trading=_parse_bool(os.getenv("ENABLE_AUTONOMOUS_TRADING"), False),
     )
+
+
+def _is_http_url(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized.startswith("http://") or normalized.startswith("https://")

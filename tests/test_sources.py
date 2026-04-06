@@ -138,7 +138,11 @@ def test_parse_rss_feed_success_and_error_cases(monkeypatch) -> None:
 
 
 def test_specific_rss_wrappers_and_custom_rss(monkeypatch) -> None:
-    settings = make_settings(custom_rss_urls=["https://c1", "https://c2"])
+    settings = make_settings(
+        custom_rss_urls=["https://c1", "https://c2"],
+        truth_social_rss_url="https://truth.feed.xml",
+        official_rss_url="https://official.feed.xml",
+    )
     captured: list[tuple[str, SignalSource]] = []
 
     def _fake_parse(client, feed_url, source, default_author, keywords):
@@ -155,6 +159,8 @@ def test_specific_rss_wrappers_and_custom_rss(monkeypatch) -> None:
     finally:
         client.close()
     assert len(captured) == 4
+    assert captured[0][0] == "https://truth.feed.xml"
+    assert captured[1][0] == "https://official.feed.xml"
 
 
 def test_fetch_x_recent_http_and_payload_failures(monkeypatch) -> None:
@@ -235,5 +241,18 @@ def test_signal_client_fetch_all_provider_handling_and_to_json() -> None:
 
         client.providers["x"] = lambda _c, _s: (_ for _ in ()).throw(RuntimeError("fail"))
         assert client.fetch_all() == []
+    finally:
+        client.close()
+
+
+def test_signal_client_fetch_all_with_meta_collects_warnings() -> None:
+    settings = make_settings(signal_services=["x", "unknown"], signal_lookback_minutes=60)
+    client = sources.SignalClient(settings)
+    try:
+        client.providers["x"] = lambda _c, _s: (_ for _ in ()).throw(RuntimeError("x unavailable"))
+        items, errors = client.fetch_all_with_meta()
+        assert items == []
+        assert errors["x"] == "x unavailable"
+        assert errors["unknown"] == "unsupported_provider"
     finally:
         client.close()
